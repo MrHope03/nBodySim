@@ -3,6 +3,68 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 
+class OctreeNode:
+    def __init__(self, center, size):
+        self.center = np.array(center, dtype=float)
+        self.size = size
+        self.children = [None] * 8
+        self.body = None
+        self.total_mass = 0
+        self.com = np.zeros(3)
+        self.is_internal = False
+
+    def insert(self, body):
+        if self.body is None and not self.is_internal:
+            self.body = body
+            self.total_mass = body.mass
+            self.com = body.position.copy()
+        else:
+            if not self.is_internal:
+                self.subdivide()
+                self._insert_body(self.body)
+                self.body = None
+                self.is_internal = True
+            self._insert_body(body)
+            self.total_mass += body.mass
+            self.com = (self.com * (self.total_mass - body.mass) + body.position * body.mass) / self.total_mass
+
+    def _insert_body(self, body):
+        index = 0
+        offset = self.size / 4
+        new_center = self.center.copy()
+        for i in range(3):
+            if body.position[i] > self.center[i]:
+                index |= 1 << i
+                new_center[i] += offset
+            else:
+                new_center[i] -= offset
+        if self.children[index] is None:
+            self.children[index] = OctreeNode(new_center, self.size / 2)
+        self.children[index].insert(body)
+
+    def subdivide(self):
+        for i in range(8):
+            offset = [(1 if i & (1 << axis) else -1) * self.size / 4 for axis in range(3)]
+            new_center = self.center + offset
+            self.children[i] = OctreeNode(new_center, self.size / 2)
+
+    def compute_force_on(self, target_body, theta=0.5, G=1.0):
+        if self.body is target_body and not self.is_internal:
+            return
+
+        distance = np.linalg.norm(self.com - target_body.position)
+        if distance == 0:
+            return
+
+        if not self.is_internal or (self.size / distance) < theta:
+            force_dir = (self.com - target_body.position) / distance
+            force_mag = G * self.total_mass * target_body.mass / distance**2
+            target_body.velocity += force_dir * (force_mag / target_body.mass)
+        else:
+            for child in self.children:
+                if child is not None:
+                    child.compute_force_on(target_body, theta, G)
+
 class SolarSystem:
     def __init__(self, size, projection_2d=False):
         self.size = size
@@ -45,11 +107,11 @@ class SolarSystem:
         self.ax.clear()
 
     def calculate_all_body_interactions(self):
-        bodies_copy = self.bodies.copy()
-        # Use itertools.combinations for efficient pairs
-        for first, second in itertools.combinations(bodies_copy, 2):
-             first.accelerate_due_to_gravity(second)
-
+        root = OctreeNode(center=(0, 0, 0), size=self.size)
+        for body in self.bodies:
+            root.insert(body)
+        for body in self.bodies:
+            root.compute_force_on(body)
 
 class SolarSystemBody:
     min_display_size = 10
