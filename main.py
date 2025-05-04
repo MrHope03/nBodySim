@@ -6,9 +6,9 @@ import numpy as np
 
 # Simulation parameters
 SIMULATION_SIZE = 1000
-NUMBER_OF_PLANETS = 50
+NUMBER_OF_PLANETS = 5
 TIMESTEPS = 500
-PROJECT_TO_2D = False # Set to True for a 2D projection view
+PROJECT_TO_2D = True # Set to True for a 2D projection view
 
 system = NBodySystem(size=SIMULATION_SIZE, projection_2d=PROJECT_TO_2D)
 

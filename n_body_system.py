@@ -3,6 +3,7 @@ import math
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.widgets as widgets
+from collections import deque # Import deque
 
 class OctreeNode:
     def __init__(self, center, size):
@@ -173,6 +174,8 @@ class NBodySystem:
 class NBodySystemBody:
     min_display_size = 10
     display_log_base = 1.3
+    # Default trail length if not specified
+    DEFAULT_TRAIL_LENGTH = 50
 
     def __init__(
         self,
@@ -180,6 +183,7 @@ class NBodySystemBody:
         mass,
         position=(0, 0, 0),
         velocity=(0, 0, 0),
+        trail_length=DEFAULT_TRAIL_LENGTH # Add trail_length parameter
     ):
         self.nbody_system = nbody_system
         self.mass = mass
@@ -191,12 +195,20 @@ class NBodySystemBody:
         )
         self.colour = "black"
 
+        # History of positions for the trail
+        self.position_history = deque(maxlen=trail_length)
+        self.position_history.append(self.position.copy()) # Store initial position
+
         self.nbody_system.add_body(self)
 
     def move(self):
         self.position += self.velocity
+        # Append a copy of the new position to the history
+        self.position_history.append(self.position.copy())
+
 
     def draw(self):
+        # Draw the body marker at the current position
         self.nbody_system.ax.plot(
             self.position[0],
             self.position[1],
@@ -205,6 +217,34 @@ class NBodySystemBody:
             markersize=self.display_size + (self.position[0] / (self.nbody_system.size / 30)),
             color=self.colour
         )
+
+        # Draw the trail
+        if len(self.position_history) > 1:
+            # Convert deque to list for easier segment processing
+            history_points = list(self.position_history)
+            num_segments = len(history_points) - 1
+
+            for i in range(num_segments):
+                # Get start and end points for the segment
+                p1 = history_points[i]
+                p2 = history_points[i+1]
+
+                # Calculate alpha for fading (linear fade from low alpha to high alpha)
+                # Oldest segments (small i) have low alpha, newest (i near num_segments-1) have high alpha
+                alpha = (i + 1) / num_segments
+                # Ensure alpha doesn't start exactly at 0 if num_segments is 1 or large
+                alpha = max(0.1, alpha) # Minimum alpha so the start isn't invisible
+
+                self.nbody_system.ax.plot(
+                    [p1[0], p2[0]],
+                    [p1[1], p2[1]],
+                    [p1[2], p2[2]],
+                    color=self.colour,
+                    alpha=alpha,
+                    linewidth=1.5 # Adjust line thickness for the trail
+                )
+
+        # Draw projection in 2D view (still only the current position)
         if self.nbody_system.projection_2d:
             limit = self.nbody_system.size / 2
             self.nbody_system.ax.plot(
@@ -224,9 +264,13 @@ class Sun(NBodySystemBody):
         mass=10_000,
         position=(0, 0, 0),
         velocity=(0, 0, 0),
+        trail_length=NBodySystemBody.DEFAULT_TRAIL_LENGTH # Pass trail_length
     ):
-        super(Sun, self).__init__(nbody_system, mass, position, velocity)
+        # Suns typically don't need trails in a simple solar system simulation,
+        # but keeping the parameter for consistency. Could set a very small length.
+        super(Sun, self).__init__(nbody_system, mass, position, velocity, trail_length=1) # Trail length 1 for Sun
         self.colour = "yellow"
+
 
 class Planet(NBodySystemBody):
     colours = itertools.cycle([(1, 0, 0), (0, 1, 0), (0, 0, 1), (0, 1, 1), (1, 0, 1), (1, 1, 0),
@@ -238,6 +282,7 @@ class Planet(NBodySystemBody):
         mass=10,
         position=(0, 0, 0),
         velocity=(0, 0, 0),
+        trail_length=NBodySystemBody.DEFAULT_TRAIL_LENGTH # Pass trail_length
     ):
-        super(Planet, self).__init__(nbody_system, mass, position, velocity)
+        super(Planet, self).__init__(nbody_system, mass, position, velocity, trail_length=trail_length)
         self.colour = next(Planet.colours)
