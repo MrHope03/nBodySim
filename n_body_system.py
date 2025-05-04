@@ -2,6 +2,7 @@ import itertools
 import math
 import matplotlib.pyplot as plt
 import numpy as np
+import matplotlib.widgets as widgets
 
 class OctreeNode:
     def __init__(self, center, size):
@@ -24,9 +25,12 @@ class OctreeNode:
                 self._insert_body(self.body)
                 self.body = None
                 self.is_internal = True
+
             self._insert_body(body)
+
             self.total_mass += body.mass
             self.com = (self.com * (self.total_mass - body.mass) + body.position * body.mass) / self.total_mass
+
 
     def _insert_body(self, body):
         index = 0
@@ -38,80 +42,133 @@ class OctreeNode:
                 new_center[i] += offset
             else:
                 new_center[i] -= offset
+
         if self.children[index] is None:
             self.children[index] = OctreeNode(new_center, self.size / 2)
+
         self.children[index].insert(body)
 
+
     def subdivide(self):
+        half_size = self.size / 2
+        quarter_size = self.size / 4
         for i in range(8):
-            offset = [(1 if i & (1 << axis) else -1) * self.size / 4 for axis in range(3)]
+            offset = [0, 0, 0]
+            if i & 1: offset[0] = quarter_size
+            else: offset[0] = -quarter_size
+            if i & 2: offset[1] = quarter_size
+            else: offset[1] = -quarter_size
+            if i & 4: offset[2] = quarter_size
+            else: offset[2] = -quarter_size
             new_center = self.center + offset
-            self.children[i] = OctreeNode(new_center, self.size / 2)
+            self.children[i] = OctreeNode(new_center, half_size)
+
 
     def compute_force_on(self, target_body, theta=0.5, G=1.0):
         if self.body is target_body and not self.is_internal:
-            return
+             return
 
-        distance = np.linalg.norm(self.com - target_body.position)
+        distance_vector = self.com - target_body.position
+        distance = np.linalg.norm(distance_vector)
+
         if distance == 0:
-            return
+             return
 
         if not self.is_internal or (self.size / distance) < theta:
-            force_dir = (self.com - target_body.position) / distance
+            force_dir = distance_vector / distance
             force_mag = G * self.total_mass * target_body.mass / distance**2
-            target_body.velocity += force_dir * (force_mag / target_body.mass)
+
+            acceleration = force_dir * (force_mag / target_body.mass)
+            target_body.velocity += acceleration
         else:
             for child in self.children:
                 if child is not None:
                     child.compute_force_on(target_body, theta, G)
 
-class SolarSystem:
+
+class NBodySystem:
     def __init__(self, size, projection_2d=False):
+        self.initial_size = size
         self.size = size
         self.projection_2d = projection_2d
         self.bodies = []
 
-        self.fig, self.ax = plt.subplots(
-            1,
-            1,
-            subplot_kw={"projection": "3d"},
-            figsize=(self.size / 50, self.size / 50),
+        self.fig = plt.figure(figsize=(10, 10))
+        self.ax = self.fig.add_subplot(
+            111,
+            projection="3d",
+            position=[0.05, 0.20, 0.90, 0.75]
         )
+
         if self.projection_2d:
             self.ax.view_init(10, 0)
         else:
             self.ax.view_init(0, 0)
-        self.fig.tight_layout()
+
+        self.setup_ui()
+
+    def setup_ui(self):
+        axcolor = 'lightgoldenrodyellow'
+        slider_ax = self.fig.add_axes([0.25, 0.05, 0.50, 0.03], facecolor=axcolor)
+
+        self.scale_slider = widgets.Slider(
+            ax=slider_ax,
+            label='View Scale',
+            valmin=self.initial_size * 0.1,
+            valmax=self.initial_size * 2.0,
+            valinit=self.initial_size,
+            valstep=self.initial_size / 100.0
+        )
+
+        self.scale_slider.on_changed(self.update_scale)
+
+        self._slider_ax = slider_ax
+
+    def update_scale(self, val):
+        self.size = val
 
     def add_body(self, body):
         self.bodies.append(body)
 
     def update_all(self):
-        # Sorting key still works with numpy array element access
         self.bodies.sort(key=lambda item: item.position[0])
         for body in self.bodies:
             body.move()
-            body.draw()
 
     def draw_all(self):
-        self.ax.set_xlim((-self.size / 2, self.size / 2))
-        self.ax.set_ylim((-self.size / 2, self.size / 2))
-        self.ax.set_zlim((-self.size / 2, self.size / 2))
+        self.ax.clear()
+
+        limit = self.size / 2
+        self.ax.set_xlim((-limit, limit))
+        self.ax.set_ylim((-limit, limit))
+        self.ax.set_zlim((-limit, limit))
+
         if self.projection_2d:
             self.ax.xaxis.set_ticklabels([])
             self.ax.yaxis.set_ticklabels([])
             self.ax.zaxis.set_ticklabels([])
+            self.ax.set_xlabel('X')
+            self.ax.set_ylabel('Y')
+            self.ax.set_zlabel('Z')
+            self.ax.set_title("N-Body Simulation (2D Projection)")
         else:
             self.ax.axis(False)
+            self.ax.set_title("N-Body Simulation (3D)")
+
+        for body in self.bodies:
+            body.draw()
+
         plt.pause(0.001)
-        self.ax.clear()
+
 
     def calculate_all_body_interactions(self):
-        root = OctreeNode(center=(0, 0, 0), size=self.size)
+        root = OctreeNode(center=(0, 0, 0), size=self.initial_size * 2)
         for body in self.bodies:
-            root.insert(body)
+             root.insert(body)
+
         for body in self.bodies:
             root.compute_force_on(body)
+
 
 class NBodySystemBody:
     min_display_size = 10
@@ -126,7 +183,6 @@ class NBodySystemBody:
     ):
         self.nbody_system = nbody_system
         self.mass = mass
-        # Store position and velocity as numpy arrays
         self.position = np.array(position, dtype=float)
         self.velocity = np.array(velocity, dtype=float)
         self.display_size = max(
@@ -138,52 +194,28 @@ class NBodySystemBody:
         self.nbody_system.add_body(self)
 
     def move(self):
-        # Use numpy array addition for position update
         self.position += self.velocity
 
     def draw(self):
-        # Unpack numpy array for plotting
         self.nbody_system.ax.plot(
-            *self.position,
+            self.position[0],
+            self.position[1],
+            self.position[2],
             marker="o",
-            markersize=self.display_size + self.position[0] / 30, # Still using position[0] for z-sorting effect
+            markersize=self.display_size + (self.position[0] / (self.nbody_system.size / 30)),
             color=self.colour
         )
         if self.nbody_system.projection_2d:
-            # Draw projection on the bottom plane
+            limit = self.nbody_system.size / 2
             self.nbody_system.ax.plot(
                 self.position[0],
                 self.position[1],
-                -self.nbody_system.size / 2,
+                -limit,
                 marker="o",
                 markersize=self.display_size / 2,
                 color=(.5, .5, .5),
+                alpha=0.6
             )
-
-    def accelerate_due_to_gravity(self, other):
-        # Calculate distance vector using numpy subtraction
-        distance = other.position - self.position
-        # Calculate distance magnitude using numpy norm
-        distance_mag = np.linalg.norm(distance)
-
-        # Avoid division by zero if bodies are at the same location
-        if distance_mag == 0:
-            return
-
-        # Calculate force magnitude
-        force_mag = self.mass * other.mass / (distance_mag ** 2)
-        # Calculate force vector by normalizing distance and multiplying by magnitude
-        force = (distance / distance_mag) * force_mag
-
-        # Apply acceleration to both bodies
-        # Acceleration = Force / Mass
-        self_acceleration = force / self.mass
-        other_acceleration = -force / other.mass # Force on the other body is opposite
-
-        # Update velocities using numpy addition/subtraction
-        self.velocity += self_acceleration
-        other.velocity += other_acceleration
-
 
 class Sun(NBodySystemBody):
     def __init__(
@@ -197,7 +229,8 @@ class Sun(NBodySystemBody):
         self.colour = "yellow"
 
 class Planet(NBodySystemBody):
-    colours = itertools.cycle([(1, 0, 0), (0, 1, 0), (0, 0, 1), (0, 1, 1), (1, 0, 1), (1, 1, 0)]) # Added more colors
+    colours = itertools.cycle([(1, 0, 0), (0, 1, 0), (0, 0, 1), (0, 1, 1), (1, 0, 1), (1, 1, 0),
+                               (0.5, 0.5, 0.5), (0.7, 0.3, 0), (0, 0.7, 0.3)])
 
     def __init__(
         self,
