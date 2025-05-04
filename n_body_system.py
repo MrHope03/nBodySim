@@ -113,18 +113,18 @@ class SolarSystem:
         for body in self.bodies:
             root.compute_force_on(body)
 
-class SolarSystemBody:
+class NBodySystemBody:
     min_display_size = 10
     display_log_base = 1.3
 
     def __init__(
         self,
-        solar_system,
+        nbody_system,
         mass,
         position=(0, 0, 0),
         velocity=(0, 0, 0),
     ):
-        self.solar_system = solar_system
+        self.nbody_system = nbody_system
         self.mass = mass
         # Store position and velocity as numpy arrays
         self.position = np.array(position, dtype=float)
@@ -135,7 +135,7 @@ class SolarSystemBody:
         )
         self.colour = "black"
 
-        self.solar_system.add_body(self)
+        self.nbody_system.add_body(self)
 
     def move(self):
         # Use numpy array addition for position update
@@ -143,18 +143,18 @@ class SolarSystemBody:
 
     def draw(self):
         # Unpack numpy array for plotting
-        self.solar_system.ax.plot(
+        self.nbody_system.ax.plot(
             *self.position,
             marker="o",
             markersize=self.display_size + self.position[0] / 30, # Still using position[0] for z-sorting effect
             color=self.colour
         )
-        if self.solar_system.projection_2d:
+        if self.nbody_system.projection_2d:
             # Draw projection on the bottom plane
-            self.solar_system.ax.plot(
+            self.nbody_system.ax.plot(
                 self.position[0],
                 self.position[1],
-                -self.solar_system.size / 2,
+                -self.nbody_system.size / 2,
                 marker="o",
                 markersize=self.display_size / 2,
                 color=(.5, .5, .5),
@@ -185,26 +185,26 @@ class SolarSystemBody:
         other.velocity += other_acceleration
 
 
-class Sun(SolarSystemBody):
+class Sun(NBodySystemBody):
     def __init__(
         self,
-        solar_system,
+        nbody_system,
         mass=10_000,
         position=(0, 0, 0),
         velocity=(0, 0, 0),
     ):
-        super(Sun, self).__init__(solar_system, mass, position, velocity)
+        super(Sun, self).__init__(nbody_system, mass, position, velocity)
         self.colour = "yellow"
 
-class Planet(SolarSystemBody):
+class Planet(NBodySystemBody):
     colours = itertools.cycle([(1, 0, 0), (0, 1, 0), (0, 0, 1), (0, 1, 1), (1, 0, 1), (1, 1, 0)]) # Added more colors
 
     def __init__(
         self,
-        solar_system,
+        nbody_system,
         mass=10,
         position=(0, 0, 0),
         velocity=(0, 0, 0),
     ):
-        super(Planet, self).__init__(solar_system, mass, position, velocity)
+        super(Planet, self).__init__(nbody_system, mass, position, velocity)
         self.colour = next(Planet.colours)
